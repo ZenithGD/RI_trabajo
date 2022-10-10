@@ -139,15 +139,14 @@ public class IndexFiles {
     Element xmlElement = xmlDoc.getDocumentElement();
 
     parseXMLTagText(doc, xmlElement, "dc:title", "title", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:identifier", "identifier", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:subject", "subject", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:type", "type", Field.Store.YES);
+    parseXMLTagString(doc, xmlElement, "dc:subject", "subject", Field.Store.YES);
+    // parseXMLTagString(doc, xmlElement, "dc:language", "language", Field.Store.YES);
     parseXMLTagText(doc, xmlElement, "dc:description", "description", Field.Store.YES);
     parseXMLTagText(doc, xmlElement, "dc:creator", "creator", Field.Store.YES);
+    parseXMLTagText(doc, xmlElement, "dc:contributor", "contributor", Field.Store.YES);
     parseXMLTagText(doc, xmlElement, "dc:publisher", "publisher", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:format", "format", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:language", "language", Field.Store.YES);
     parseXMLTagString(doc, xmlElement, "dc:date", "date", Field.Store.YES);
+    parseXMLTagText(doc, xmlElement, "dc:type", "type", Field.Store.YES);
   }
 
   private static void parseXMLTagString(Document doc, Element xmlElement, String fieldXML, String fieldName, Field.Store store) {
