@@ -24,9 +24,6 @@ import java.util.Arrays;
 import java.util.Date;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
-import org.apache.lucene.analysis.es.SpanishAnalyzer;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -51,9 +48,11 @@ public class SearchFiles {
 
         String index = "index";
         String[] fields = { "title", "subject", "description", "creator", "contributor", "publisher", "date", "type" };
-        BooleanClause.Occur[] flags = { BooleanClause.Occur.SHOULD, BooleanClause.Occur.SHOULD,
-                BooleanClause.Occur.SHOULD, BooleanClause.Occur.SHOULD, BooleanClause.Occur.SHOULD,
-                BooleanClause.Occur.SHOULD };
+        // BooleanClause.Occur[] flags = { BooleanClause.Occur.SHOULD,
+        // BooleanClause.Occur.SHOULD,
+        // BooleanClause.Occur.SHOULD, BooleanClause.Occur.SHOULD,
+        // BooleanClause.Occur.SHOULD,
+        // BooleanClause.Occur.SHOULD };
         String queries = null;
         int repeat = 0;
         boolean raw = false;
@@ -138,12 +137,12 @@ public class SearchFiles {
                 System.out.println("Time: " + (end.getTime() - start.getTime()) + "ms");
             }
 
-            if ( out != null ) {
+            if (out != null) {
                 doFullSearch(in, out, searcher, query, queryIndex);
             } else {
-            
-                doPagingSearch(in, searcher, query, hitsPerPage, raw, 
-                queries == null && queryFile == null);
+
+                doPagingSearch(in, searcher, query, hitsPerPage, raw,
+                        queries == null && queryFile == null);
             }
         }
         if (out != null) {
@@ -152,7 +151,17 @@ public class SearchFiles {
         reader.close();
     }
 
-    public static void doFullSearch(BufferedReader in, OutputStreamWriter out, IndexSearcher searcher, Query query, int queryIndex ) throws IOException {
+    /**
+     * Perform a full search based on a query, without pagination. 
+     * @param in The input stream
+     * @param out The output stream
+     * @param searcher Searcher object over the index
+     * @param query Phrase that you want to search
+     * @param queryIndex number of the query in the document
+     * @throws IOException Throws if the file can't be read
+     */
+    public static void doFullSearch(BufferedReader in, OutputStreamWriter out, IndexSearcher searcher, Query query,
+            int queryIndex) throws IOException {
 
         TotalHitCountCollector collector = new TotalHitCountCollector();
         searcher.search(query, collector);
@@ -162,17 +171,16 @@ public class SearchFiles {
         int numTotalHits = Math.toIntExact(results.totalHits.value);
         System.out.println(numTotalHits + " total matching documents");
 
-        for ( int i = 0; i < numTotalHits; i++ ) {
+        for (int i = 0; i < numTotalHits; i++) {
             Document doc = searcher.doc(hits[i].doc);
             String path = doc.get("path");
             if (path != null) {
-              out.write(queryIndex + "\t" + path + "\n");
+                out.write(queryIndex + "\t" + path + "\n");
             } else {
-              out.write(queryIndex + "\tNo path for this document\n");
+                out.write(queryIndex + "\tNo path for this document\n");
             }
         }
     }
-
 
     /**
      * This demonstrates a typical paging search scenario, where the search engine
@@ -188,96 +196,99 @@ public class SearchFiles {
      * is executed another time and all hits are collected.
      * 
      */
-    public static void doPagingSearch(BufferedReader in, IndexSearcher searcher, Query query, 
-                                     int hitsPerPage, boolean raw, boolean interactive) throws IOException {
+    public static void doPagingSearch(BufferedReader in, IndexSearcher searcher, Query query,
+            int hitsPerPage, boolean raw, boolean interactive) throws IOException {
 
-    // Collect enough docs to show 5 pages
-    TopDocs results = searcher.search(query, 5 * hitsPerPage);
-    ScoreDoc[] hits = results.scoreDocs;
-    
-    int numTotalHits = Math.toIntExact(results.totalHits.value);
-    System.out.println(numTotalHits + " total matching documents");
+        // Collect enough docs to show 5 pages
+        TopDocs results = searcher.search(query, 5 * hitsPerPage);
+        ScoreDoc[] hits = results.scoreDocs;
 
-    int start = 0;
-    int end = Math.min(numTotalHits, hitsPerPage);
-        
-    while (true) {
-      if (end > hits.length) {
-        System.out.println("Only results 1 - " + hits.length +" of " + numTotalHits + " total matching documents collected.");
-        System.out.println("Collect more (y/n) ?");
-        String line = in.readLine();
-        if (line.length() == 0 || line.charAt(0) == 'n') {
-          break;
-        }
+        int numTotalHits = Math.toIntExact(results.totalHits.value);
+        System.out.println(numTotalHits + " total matching documents");
 
-        hits = searcher.search(query, numTotalHits).scoreDocs;
-      }
-      
-      end = Math.min(hits.length, start + hitsPerPage);
-      
-      for (int i = start; i < end; i++) {
-        if (raw) {                              // output raw format
-          System.out.println("doc=" + hits[i].doc + " score=" + hits[i].score);
-          continue;
-        }
+        int start = 0;
+        int end = Math.min(numTotalHits, hitsPerPage);
 
-        Document doc = searcher.doc(hits[i].doc);
-        String path = doc.get("path");
-        if (path != null) {
-          System.out.println((i+1) + ". " + path);
-          //System.out.println("  modified: " + new Date(Long.parseLong(doc.get("modified"))));
-          //System.out.println("  identifier: " + doc.get("identifier"));
-        } else {
-          System.out.println((i+1) + ". " + "No path for this document");
-        }
-
-        // Explain the scoring function
-        // System.out.println(searcher.explain(query, hits[i].doc));
-                  
-      }
-
-      if (!interactive || end == 0) {
-        break;
-      }
-
-      if (numTotalHits >= end) {
-        boolean quit = false;
         while (true) {
-          System.out.print("Press ");
-          if (start - hitsPerPage >= 0) {
-            System.out.print("(p)revious page, ");  
-          }
-          if (start + hitsPerPage < numTotalHits) {
-            System.out.print("(n)ext page, ");
-          }
-          System.out.println("(q)uit or enter number to jump to a page.");
-          
-          String line = in.readLine();
-          if (line.length() == 0 || line.charAt(0)=='q') {
-            quit = true;
-            break;
-          }
-          if (line.charAt(0) == 'p') {
-            start = Math.max(0, start - hitsPerPage);
-            break;
-          } else if (line.charAt(0) == 'n') {
-            if (start + hitsPerPage < numTotalHits) {
-              start+=hitsPerPage;
+            if (end > hits.length) {
+                System.out.println("Only results 1 - " + hits.length + " of " + numTotalHits
+                        + " total matching documents collected.");
+                System.out.println("Collect more (y/n) ?");
+                String line = in.readLine();
+                if (line.length() == 0 || line.charAt(0) == 'n') {
+                    break;
+                }
+
+                hits = searcher.search(query, numTotalHits).scoreDocs;
             }
-            break;
-          } else {
-            int page = Integer.parseInt(line);
-            if ((page - 1) * hitsPerPage < numTotalHits) {
-              start = (page - 1) * hitsPerPage;
-              break;
-            } else {
-              System.out.println("No such page");
+
+            end = Math.min(hits.length, start + hitsPerPage);
+
+            for (int i = start; i < end; i++) {
+                if (raw) { // output raw format
+                    System.out.println("doc=" + hits[i].doc + " score=" + hits[i].score);
+                    continue;
+                }
+
+                Document doc = searcher.doc(hits[i].doc);
+                String path = doc.get("path");
+                if (path != null) {
+                    System.out.println((i + 1) + ". " + path);
+                    // System.out.println(" modified: " + new
+                    // Date(Long.parseLong(doc.get("modified"))));
+                    // System.out.println(" identifier: " + doc.get("identifier"));
+                } else {
+                    System.out.println((i + 1) + ". " + "No path for this document");
+                }
+
+                // Explain the scoring function
+                // System.out.println(searcher.explain(query, hits[i].doc));
+
             }
-          }
+
+            if (!interactive || end == 0) {
+                break;
+            }
+
+            if (numTotalHits >= end) {
+                boolean quit = false;
+                while (true) {
+                    System.out.print("Press ");
+                    if (start - hitsPerPage >= 0) {
+                        System.out.print("(p)revious page, ");
+                    }
+                    if (start + hitsPerPage < numTotalHits) {
+                        System.out.print("(n)ext page, ");
+                    }
+                    System.out.println("(q)uit or enter number to jump to a page.");
+
+                    String line = in.readLine();
+                    if (line.length() == 0 || line.charAt(0) == 'q') {
+                        quit = true;
+                        break;
+                    }
+                    if (line.charAt(0) == 'p') {
+                        start = Math.max(0, start - hitsPerPage);
+                        break;
+                    } else if (line.charAt(0) == 'n') {
+                        if (start + hitsPerPage < numTotalHits) {
+                            start += hitsPerPage;
+                        }
+                        break;
+                    } else {
+                        int page = Integer.parseInt(line);
+                        if ((page - 1) * hitsPerPage < numTotalHits) {
+                            start = (page - 1) * hitsPerPage;
+                            break;
+                        } else {
+                            System.out.println("No such page");
+                        }
+                    }
+                }
+                if (quit)
+                    break;
+                end = Math.min(numTotalHits, start + hitsPerPage);
+            }
         }
-        if (quit) break;
-        end = Math.min(numTotalHits, start + hitsPerPage);
-      }
     }
-  }
 }

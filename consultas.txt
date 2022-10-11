@@ -1,6 +1,7 @@
-+description:robótica +type:TFG
-+title:terreno
-+type:TAZ-TFG +description:gatos +title:gatos
-+title:obligación type:TFG +publisher:Derecho 
-+publisher:Ingeniería +creator:Sergio
-title:hard* subject:Informática
+robótica
+description:"informática gráfica"~3 AND date:[2010 TO 2018] AND (type:TESIS OR type:TFM)
+(description:"fauna flora"~3 OR description:animales) AND title:felino publisher:bio*
+date:[2000 TO 2010] AND title:E* AND +publisher:Ingeniería AND description:"calor frío"~4
+description:"cambio climático" AND (creator:"Julia" OR creator:"Rubén")
+publisher:Fisioterapia AND description:contracción
+title:hard* AND -subject:Informática AND contributor:P*

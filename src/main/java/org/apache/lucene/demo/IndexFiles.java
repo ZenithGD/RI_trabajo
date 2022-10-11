@@ -43,210 +43,242 @@ import java.util.Date;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-/** Index all text files under a directory.
+/**
+ * Index all text files under a directory.
  * <p>
  * This is a command-line application demonstrating simple Lucene indexing.
  * Run it with no command-line arguments for usage information.
  */
 public class IndexFiles {
-  
-  private IndexFiles() {}
 
-  /** Index all text files under a directory. */
-  public static void main(String[] args) {
-    String usage = "java org.apache.lucene.demo.IndexFiles"
-                 + " [-index INDEX_PATH] [-docs DOCS_PATH] [-update]\n\n"
-                 + "This indexes the documents in DOCS_PATH, creating a Lucene index"
-                 + "in INDEX_PATH that can be searched with SearchFiles";
-    String indexPath = "index";
-    String docsPath = null;
-    boolean create = true;
-    for(int i=0;i<args.length;i++) {
-      if ("-index".equals(args[i])) {
-        indexPath = args[i+1];
-        i++;
-      } else if ("-docs".equals(args[i])) {
-        docsPath = args[i+1];
-        i++;
-      } else if ("-update".equals(args[i])) {
-        create = false;
-      }
+    private IndexFiles() {
     }
 
-    if (docsPath == null) {
-      System.err.println("Usage: " + usage);
-      System.exit(1);
-    }
-
-    final File docDir = new File(docsPath);
-    if (!docDir.exists() || !docDir.canRead()) {
-      System.out.println("Document directory '" +docDir.getAbsolutePath()+ "' does not exist or is not readable, please check the path");
-      System.exit(1);
-    }
-    
-    Date start = new Date();
-    try {
-      System.out.println("Indexing to directory '" + indexPath + "'...");
-
-      Directory dir = FSDirectory.open(Paths.get(indexPath));
-      Analyzer analyzer = new SpanishAnalyzer2();
-      IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
-
-      if (create) {
-        // Create a new index in the directory, removing any
-        // previously indexed documents:
-        iwc.setOpenMode(OpenMode.CREATE);
-      } else {
-        // Add new documents to an existing index:
-        iwc.setOpenMode(OpenMode.CREATE_OR_APPEND);
-      }
-
-      // Optional: for better indexing performance, if you
-      // are indexing many documents, increase the RAM
-      // buffer.  But if you do this, increase the max heap
-      // size to the JVM (eg add -Xmx512m or -Xmx1g):
-      //
-      // iwc.setRAMBufferSizeMB(256.0);
-
-      IndexWriter writer = new IndexWriter(dir, iwc);
-      indexDocs(writer, docDir);
-
-      // NOTE: if you want to maximize search performance,
-      // you can optionally call forceMerge here.  This can be
-      // a terribly costly operation, so generally it's only
-      // worth it when your index is relatively static (ie
-      // you're done adding documents to it):
-      //
-      // writer.forceMerge(1);
-
-      writer.close();
-
-      Date end = new Date();
-      System.out.println(end.getTime() - start.getTime() + " total milliseconds");
-
-    } catch (IOException e) {
-      System.out.println(" caught a " + e.getClass() +
-       "\n with message: " + e.getMessage());
-    }
-  }
-
-
-  static void parseXMLDoc(Document doc, org.w3c.dom.Document xmlDoc) {
-    // Add the contents of the file to a field named "contents".  Specify a Reader,
-    // so that the text of the file is tokenized and indexed, but not stored.
-    // Note that FileReader expects the file to be in UTF-8 encoding.
-    // If that's not the case searching for special characters will fail.
-    Element xmlElement = xmlDoc.getDocumentElement();
-
-    parseXMLTagText(doc, xmlElement, "dc:title", "title", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:subject", "subject", Field.Store.YES);
-    // parseXMLTagString(doc, xmlElement, "dc:language", "language", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:description", "description", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:creator", "creator", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:contributor", "contributor", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:publisher", "publisher", Field.Store.YES);
-    parseXMLTagString(doc, xmlElement, "dc:date", "date", Field.Store.YES);
-    parseXMLTagText(doc, xmlElement, "dc:type", "type", Field.Store.YES);
-  }
-
-  private static void parseXMLTagString(Document doc, Element xmlElement, String fieldXML, String fieldName, Field.Store store) {
-    NodeList list = xmlElement.getElementsByTagName(fieldXML);
-
-    for ( int i = 0; i < list.getLength(); i++ ) {
-      doc.add(new StringField(fieldName, list.item(i).getTextContent(),store));
-    }
-  }
-
-  private static void parseXMLTagText(Document doc, Element xmlElement, String fieldXML, String fieldName, Field.Store store) {
-    NodeList list = xmlElement.getElementsByTagName(fieldXML);
-
-    for ( int i = 0; i < list.getLength(); i++ ) {
-      doc.add(new TextField(fieldName, list.item(i).getTextContent(), store));
-    }
-  }
-
-  /**
-   * Indexes the given file using the given writer, or if a directory is given,
-   * recurses over files and directories found under the given directory.
-   * 
-   * NOTE: This method indexes one document per input file.  This is slow.  For good
-   * throughput, put multiple documents into your input file(s).  An example of this is
-   * in the benchmark module, which can create "line doc" files, one document per line,
-   * using the
-   * <a href="../../../../../contrib-benchmark/org/apache/lucene/benchmark/byTask/tasks/WriteLineDocTask.html"
-   * >WriteLineDocTask</a>.
-   *  
-   * @param writer Writer to the index where the given file/dir info will be stored
-   * @param file The file to index, or the directory to recurse into to find files to index
-   * @throws IOException If there is a low-level I/O error
-   */
-  static void indexDocs(IndexWriter writer, File file)
-    throws IOException {
-    // do not try to index files that cannot be read
-    if (file.canRead()) {
-      if (file.isDirectory()) {
-        String[] files = file.list();
-        // an IO error could occur
-        if (files != null) {
-          for (int i = 0; i < files.length; i++) {
-            indexDocs(writer, new File(file, files[i]));
-          }
+    /** Index all text files under a directory. */
+    public static void main(String[] args) {
+        String usage = "java org.apache.lucene.demo.IndexFiles"
+                + " [-index INDEX_PATH] [-docs DOCS_PATH] [-update]\n\n"
+                + "This indexes the documents in DOCS_PATH, creating a Lucene index"
+                + "in INDEX_PATH that can be searched with SearchFiles";
+        String indexPath = "index";
+        String docsPath = null;
+        boolean create = true;
+        for (int i = 0; i < args.length; i++) {
+            if ("-index".equals(args[i])) {
+                indexPath = args[i + 1];
+                i++;
+            } else if ("-docs".equals(args[i])) {
+                docsPath = args[i + 1];
+                i++;
+            } else if ("-update".equals(args[i])) {
+                create = false;
+            }
         }
-      } else {
 
-        FileInputStream fis;
+        if (docsPath == null) {
+            System.err.println("Usage: " + usage);
+            System.exit(1);
+        }
+
+        final File docDir = new File(docsPath);
+        if (!docDir.exists() || !docDir.canRead()) {
+            System.out.println("Document directory '" + docDir.getAbsolutePath()
+                    + "' does not exist or is not readable, please check the path");
+            System.exit(1);
+        }
+
+        Date start = new Date();
         try {
-          fis = new FileInputStream(file);
-        } catch (FileNotFoundException fnfe) {
-          // at least on windows, some temporary files raise this exception with an "access denied" message
-          // checking if the file can be read doesn't help
-          return;
+            System.out.println("Indexing to directory '" + indexPath + "'...");
+
+            Directory dir = FSDirectory.open(Paths.get(indexPath));
+            Analyzer analyzer = new SpanishAnalyzer2();
+            IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
+
+            if (create) {
+                // Create a new index in the directory, removing any
+                // previously indexed documents:
+                iwc.setOpenMode(OpenMode.CREATE);
+            } else {
+                // Add new documents to an existing index:
+                iwc.setOpenMode(OpenMode.CREATE_OR_APPEND);
+            }
+
+            // Optional: for better indexing performance, if you
+            // are indexing many documents, increase the RAM
+            // buffer. But if you do this, increase the max heap
+            // size to the JVM (eg add -Xmx512m or -Xmx1g):
+            //
+            // iwc.setRAMBufferSizeMB(256.0);
+
+            IndexWriter writer = new IndexWriter(dir, iwc);
+            indexDocs(writer, docDir);
+
+            // NOTE: if you want to maximize search performance,
+            // you can optionally call forceMerge here. This can be
+            // a terribly costly operation, so generally it's only
+            // worth it when your index is relatively static (ie
+            // you're done adding documents to it):
+            //
+            // writer.forceMerge(1);
+
+            writer.close();
+
+            Date end = new Date();
+            System.out.println(end.getTime() - start.getTime() + " total milliseconds");
+
+        } catch (IOException e) {
+            System.out.println(" caught a " + e.getClass() +
+                    "\n with message: " + e.getMessage());
         }
-
-        try {
-
-          // make a new, empty document
-          Document doc = new Document();
-
-          DocumentBuilderFactory factoryInstance = DocumentBuilderFactory.newInstance();
-          DocumentBuilder dcb = factoryInstance.newDocumentBuilder();
-          org.w3c.dom.Document xmlDoc = dcb.parse(file);
-
-          // Add the path of the file as a field named "path".  Use a
-          // field that is indexed (i.e. searchable), but don't tokenize 
-          // the field into separate words and don't index term frequency
-          // or positional information:
-          Field pathField = new StringField("path", file.getPath(), Field.Store.YES);
-          doc.add(pathField);
-
-          // Add the last modified date of the file a field named "modified".
-          // Use a StoredField to return later its value as a response to a query.
-          // This indexes to milli-second resolution, which
-          // is often too fine.  You could instead create a number based on
-          // year/month/day/hour/minutes/seconds, down the resolution you require.
-          // For example the long value 2011021714 would mean
-          // February 17, 2011, 2-3 PM.
-          doc.add(new StoredField("modified", file.lastModified()));
-
-          parseXMLDoc(doc, xmlDoc);
-
-          if (writer.getConfig().getOpenMode() == OpenMode.CREATE) {
-            // New index, so we just add the document (no old document can be there):
-            System.out.println("adding " + file);
-            writer.addDocument(doc);
-          } else {
-            // Existing index (an old copy of this document may have been indexed) so 
-            // we use updateDocument instead to replace the old one matching the exact 
-            // path, if present:
-            System.out.println("updating " + file);
-            writer.updateDocument(new Term("path", file.getPath()), doc);
-          }
-        } catch (Exception e) {
-          e.printStackTrace();
-        } finally {
-          fis.close();
-        }
-      }
     }
-  }
+
+    /**
+     * Parse an XML document and search for relevant fields, then add the fields contents for indexing
+     * @param doc Document object
+     * @param xmlDoc The XML tree for the given document
+     */
+    static void parseXMLDoc(Document doc, org.w3c.dom.Document xmlDoc) {
+        // Add the contents of the file to a field named "contents". Specify a Reader,
+        // so that the text of the file is tokenized and indexed, but not stored.
+        // Note that FileReader expects the file to be in UTF-8 encoding.
+        // If that's not the case searching for special characters will fail.
+        Element xmlElement = xmlDoc.getDocumentElement();
+
+        parseXMLTagText(doc, xmlElement, "dc:title", "title", Field.Store.YES);
+        parseXMLTagString(doc, xmlElement, "dc:subject", "subject", Field.Store.YES);
+        // parseXMLTagString(doc, xmlElement, "dc:language", "language",
+        // Field.Store.YES);
+        parseXMLTagText(doc, xmlElement, "dc:description", "description", Field.Store.YES);
+        parseXMLTagText(doc, xmlElement, "dc:creator", "creator", Field.Store.YES);
+        parseXMLTagText(doc, xmlElement, "dc:contributor", "contributor", Field.Store.YES);
+        parseXMLTagText(doc, xmlElement, "dc:publisher", "publisher", Field.Store.YES);
+        parseXMLTagString(doc, xmlElement, "dc:date", "date", Field.Store.YES);
+        parseXMLTagText(doc, xmlElement, "dc:type", "type", Field.Store.YES);
+    }
+
+    /**
+     * Parse a certain field and add contents for indexing
+     * @param doc Document object
+     * @param xmlElement Root of the XML document
+     * @param fieldXML Name of the field of the XML
+     * @param fieldName name of the field that you want to store
+     * @param store Parameters that indicate if you want to store the element as is
+     */
+    private static void parseXMLTagString(Document doc, Element xmlElement, String fieldXML, String fieldName,
+            Field.Store store) {
+        NodeList list = xmlElement.getElementsByTagName(fieldXML);
+
+        for (int i = 0; i < list.getLength(); i++) {
+            doc.add(new StringField(fieldName, list.item(i).getTextContent(), store));
+        }
+    }
+
+    /**
+     * Parse a certain field and add contents for indexing
+     * @param doc Document object
+     * @param xmlElement Root of the XML document
+     * @param fieldXML Name of the field of the XML
+     * @param fieldName name of the field that you want to store
+     * @param store Parameters that indicate if you want to store the element as is
+     */
+    private static void parseXMLTagText(Document doc, Element xmlElement, String fieldXML, String fieldName,
+            Field.Store store) {
+        NodeList list = xmlElement.getElementsByTagName(fieldXML);
+
+        for (int i = 0; i < list.getLength(); i++) {
+            doc.add(new TextField(fieldName, list.item(i).getTextContent(), store));
+        }
+    }
+
+    /**
+     * Indexes the given file using the given writer, or if a directory is given,
+     * recurses over files and directories found under the given directory.
+     * 
+     * NOTE: This method indexes one document per input file. This is slow. For good
+     * throughput, put multiple documents into your input file(s). An example of
+     * this is
+     * in the benchmark module, which can create "line doc" files, one document per
+     * line,
+     * using the
+     * <a href=
+     * "../../../../../contrib-benchmark/org/apache/lucene/benchmark/byTask/tasks/WriteLineDocTask.html"
+     * >WriteLineDocTask</a>.
+     * 
+     * @param writer Writer to the index where the given file/dir info will be
+     *               stored
+     * @param file   The file to index, or the directory to recurse into to find
+     *               files to index
+     * @throws IOException If there is a low-level I/O error
+     */
+    static void indexDocs(IndexWriter writer, File file)
+            throws IOException {
+        // do not try to index files that cannot be read
+        if (file.canRead()) {
+            if (file.isDirectory()) {
+                String[] files = file.list();
+                // an IO error could occur
+                if (files != null) {
+                    for (int i = 0; i < files.length; i++) {
+                        indexDocs(writer, new File(file, files[i]));
+                    }
+                }
+            } else {
+
+                FileInputStream fis;
+                try {
+                    fis = new FileInputStream(file);
+                } catch (FileNotFoundException fnfe) {
+                    // at least on windows, some temporary files raise this exception with an
+                    // "access denied" message
+                    // checking if the file can be read doesn't help
+                    return;
+                }
+
+                try {
+
+                    // make a new, empty document
+                    Document doc = new Document();
+
+                    DocumentBuilderFactory factoryInstance = DocumentBuilderFactory.newInstance();
+                    DocumentBuilder dcb = factoryInstance.newDocumentBuilder();
+                    org.w3c.dom.Document xmlDoc = dcb.parse(file);
+
+                    // Add the path of the file as a field named "path". Use a
+                    // field that is indexed (i.e. searchable), but don't tokenize
+                    // the field into separate words and don't index term frequency
+                    // or positional information:
+                    Field pathField = new StringField("path", file.getPath(), Field.Store.YES);
+                    doc.add(pathField);
+
+                    // Add the last modified date of the file a field named "modified".
+                    // Use a StoredField to return later its value as a response to a query.
+                    // This indexes to milli-second resolution, which
+                    // is often too fine. You could instead create a number based on
+                    // year/month/day/hour/minutes/seconds, down the resolution you require.
+                    // For example the long value 2011021714 would mean
+                    // February 17, 2011, 2-3 PM.
+                    doc.add(new StoredField("modified", file.lastModified()));
+
+                    parseXMLDoc(doc, xmlDoc);
+
+                    if (writer.getConfig().getOpenMode() == OpenMode.CREATE) {
+                        // New index, so we just add the document (no old document can be there):
+                        System.out.println("adding " + file);
+                        writer.addDocument(doc);
+                    } else {
+                        // Existing index (an old copy of this document may have been indexed) so
+                        // we use updateDocument instead to replace the old one matching the exact
+                        // path, if present:
+                        System.out.println("updating " + file);
+                        writer.updateDocument(new Term("path", file.getPath()), doc);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    fis.close();
+                }
+            }
+        }
+    }
 }
