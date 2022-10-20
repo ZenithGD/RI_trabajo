@@ -48,11 +48,15 @@ public class SearchFiles {
 
         String index = "index";
         String[] fields = { "title", "subject", "description", "creator", "contributor", "publisher", "date", "type" };
-        // BooleanClause.Occur[] flags = { BooleanClause.Occur.SHOULD,
-        // BooleanClause.Occur.SHOULD,
-        // BooleanClause.Occur.SHOULD, BooleanClause.Occur.SHOULD,
-        // BooleanClause.Occur.SHOULD,
-        // BooleanClause.Occur.SHOULD };
+        BooleanClause.Occur[] flags = {
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD,
+            BooleanClause.Occur.SHOULD };
         String queries = null;
         int repeat = 0;
         boolean raw = false;
@@ -173,7 +177,9 @@ public class SearchFiles {
 
         for (int i = 0; i < numTotalHits; i++) {
             Document doc = searcher.doc(hits[i].doc);
-            String path = doc.get("path");
+            
+            String[] pathSplit = doc.get("path").split("\\\\");
+            String path = pathSplit[pathSplit.length - 1];
             if (path != null) {
                 out.write(queryIndex + "\t" + path + "\n");
             } else {
@@ -231,7 +237,8 @@ public class SearchFiles {
                 }
 
                 Document doc = searcher.doc(hits[i].doc);
-                String path = doc.get("path");
+                String[] pathSplit = doc.get("path").split("\\\\");
+                String path = pathSplit[pathSplit.length - 1];
                 if (path != null) {
                     System.out.println((i + 1) + ". " + path);
                     // System.out.println(" modified: " + new
