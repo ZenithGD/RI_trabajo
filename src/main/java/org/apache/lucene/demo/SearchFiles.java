@@ -19,9 +19,7 @@ package org.apache.lucene.demo;
 
 import java.io.*;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
+import java.util.*;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Document;
@@ -31,6 +29,18 @@ import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.FSDirectory;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+import javax.xml.xpath.XPathNodes;
 
 /** Simple command-line based search demo. */
 public class SearchFiles {
@@ -61,6 +71,9 @@ public class SearchFiles {
         int repeat = 0;
         boolean raw = false;
         String queryFile = null;
+        String infoNeedsFile = null;
+        String[] identifiers = null;
+        String[] strings = null;
         int hitsPerPage = 10;
         OutputStreamWriter out = null;
 
@@ -95,7 +108,15 @@ public class SearchFiles {
                 i++;
             } else if ("-output".equals(args[i])) {
                 out = new OutputStreamWriter(new FileOutputStream(args[i + 1]), "UTF-8");
+            } else if ("-infoNeeds".equals(args[i])) {
+                infoNeedsFile = args[++i];
+                
+                LinkedHashMap<String,String> infoNeeds = searchInfoNeeds(infoNeedsFile);
+
+                identifiers = infoNeeds.keySet().toArray(new String[0]);
+                strings = infoNeeds.values().toArray(new String[0]);
             }
+
         }
 
         IndexReader reader = DirectoryReader.open(FSDirectory.open(Paths.get(index)));
@@ -110,19 +131,22 @@ public class SearchFiles {
         }
         QueryParser parser = new MultiFieldQueryParser(fields, analyzer);
         int queryIndex = 0;
+
         while (true) {
-            queryIndex++;
+
             if (queries == null && queryFile == null) { // prompt the user
                 System.out.println("Enter query: ");
             }
 
-            String line = in.readLine();
+            if ( identifiers != null && queryIndex >= identifiers.length ) {
+                break;
+            }
+
+            String line = infoNeedsFile != null ? strings[queryIndex] : in.readLine();
 
             if (line == null || line.length() == -1) {
                 break;
             }
-
-            System.out.println("Consulta : " + line);
 
             line = line.trim();
             if (line.length() == 0) {
@@ -142,12 +166,18 @@ public class SearchFiles {
             }
 
             if (out != null) {
-                doFullSearch(in, out, searcher, query, queryIndex);
-            } else {
 
+                if (infoNeedsFile != null) {
+                    doFullSearch(in, out, searcher, query, identifiers[queryIndex]);
+                } else {
+                    doFullSearch(in, out, searcher, query, line);
+                }
+            } else {
                 doPagingSearch(in, searcher, query, hitsPerPage, raw,
                         queries == null && queryFile == null);
             }
+
+            queryIndex++;
         }
         if (out != null) {
             out.close();
@@ -155,17 +185,57 @@ public class SearchFiles {
         reader.close();
     }
 
+    public static LinkedHashMap<String,String> searchInfoNeeds(String infoNeedsFile) {
+
+        LinkedHashMap<String,String> results = new LinkedHashMap<String,String>();
+        NodeList nodes = null;
+
+        try {
+            File xmlFile = new File(infoNeedsFile);
+            DocumentBuilderFactory factoryInstance = DocumentBuilderFactory.newInstance();
+            DocumentBuilder dcb = factoryInstance.newDocumentBuilder();
+            org.w3c.dom.Document xmlDoc = dcb.parse(xmlFile);
+
+            // get all info needs
+            XPath path = XPathFactory.newInstance().newXPath();
+            String idExpr = "/informationNeeds/informationNeed";
+
+            XPathNodes xRes = path.evaluateExpression(idExpr, xmlDoc, XPathNodes.class);
+
+            // loop through info needs
+            for ( Node node : xRes ) {
+                Element elem = (Element) node;
+
+                String id = elem.getElementsByTagName("identifier").item(0).getTextContent();
+                String text = elem.getElementsByTagName("text").item(0).getTextContent();
+
+                // transform the raw info need into a text query which can be parsed by the main program
+                results.put(id, text);
+            }
+        } catch (ParserConfigurationException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (SAXException e) {
+            throw new RuntimeException(e);
+        } catch (XPathExpressionException e) {
+            throw new RuntimeException(e);
+        }
+
+        return results;
+    }
+
     /**
      * Perform a full search based on a query, without pagination. 
      * @param in The input stream
      * @param out The output stream
      * @param searcher Searcher object over the index
-     * @param query Phrase that you want to search
-     * @param queryIndex number of the query in the document
+     * @param query the query to execute
+     * @param queryIdentifier identifier of the query in the document
      * @throws IOException Throws if the file can't be read
      */
     public static void doFullSearch(BufferedReader in, OutputStreamWriter out, IndexSearcher searcher, Query query,
-            int queryIndex) throws IOException {
+            String queryIdentifier) throws IOException {
 
         TotalHitCountCollector collector = new TotalHitCountCollector();
         searcher.search(query, collector);
@@ -181,9 +251,9 @@ public class SearchFiles {
             String[] pathSplit = doc.get("path").split("\\\\");
             String path = pathSplit[pathSplit.length - 1];
             if (path != null) {
-                out.write(queryIndex + "\t" + path + "\n");
+                out.write(queryIdentifier + "\t" + path + "\n");
             } else {
-                out.write(queryIndex + "\tNo path for this document\n");
+                out.write(queryIdentifier + "\tNo path for this document\n");
             }
         }
     }
