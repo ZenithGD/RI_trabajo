@@ -18,10 +18,21 @@ package org.apache.lucene.demo;
  */
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
 
+import opennlp.tools.stemmer.PorterStemmer;
+import opennlp.tools.stemmer.snowball.SnowballStemmer;
+import org.apache.lucene.analysis.es.SpanishLightStemFilter;
+import opennlp.tools.namefind.NameFinderME;
+import opennlp.tools.namefind.TokenNameFinderModel;
+import opennlp.tools.postag.POSModel;
+import opennlp.tools.postag.POSTaggerME;
+import opennlp.tools.tokenize.*;
+import opennlp.tools.util.Span;
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.es.SpanishLightStemmer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -185,6 +196,107 @@ public class SearchFiles {
         reader.close();
     }
 
+    public static String generateQueryFromInfoNeed(String text) throws IOException {
+
+        NameFinderME nameFinder = null;
+        try (InputStream modelIn = new FileInputStream("models/es-ner-location.bin")) {
+            TokenNameFinderModel nameFinderModel = new TokenNameFinderModel(modelIn);
+            nameFinder = new NameFinderME(nameFinderModel);
+        }
+
+        try (InputStream modelIn = new FileInputStream("models/opennlp-es-pos-perceptron-pos-universal.model")) {
+            //TokenizerModel modelT = new TokenizerModel(modelIn);
+            POSModel model = new POSModel(modelIn);
+
+            POSTaggerME tagger = new POSTaggerME(model);
+            SimpleTokenizer tokenizer = SimpleTokenizer.INSTANCE;
+
+            String[] tokens = tokenizer.tokenize(text);
+            String[] tags = tagger.tag(tokens);
+            Span[] nameSpans = nameFinder.find(tokens);
+
+            StringBuilder str = new StringBuilder();
+
+            for ( Span name : nameSpans ) {
+                for ( int i = name.getStart(); i < name.getEnd(); i++ ) {
+                    System.out.println("name : " + tokens[i]);
+                }
+            }
+
+            for ( int i = 0; i < tags.length; i++ ) {
+                SnowballStemmer stemmer = new SnowballStemmer(SnowballStemmer.ALGORITHM.SPANISH);
+                String stem = stemmer.stem(tokens[i]).toString();
+                System.out.println(stem + "->" + tags[i]);
+                //System.out.println(tokens[i] + " - > " + tags[i]);
+
+                if (stem.equals("realiz")) {
+                    for (Span name : nameSpans) {
+
+                        for (int j = name.getStart(); j < name.getEnd(); j++) {
+                            if (j > i) {
+                                System.out.println("add name creator");
+                                str.append("creator:" + tokens[j] + " ");
+                            }
+                        }
+                    }
+                }
+                else if ( stem.equals("dirig") ) {
+                    for ( Span name : nameSpans ) {
+
+                        for ( int j = name.getStart(); j < name.getEnd(); j++ ) {
+                            if ( j > i ) {
+                                System.out.println("add name creator");
+                                str.append("publisher:" + tokens[j] + " ");
+                            }
+                        }
+                    }
+                } else {
+                    if ( tags[i].equals("ADP") ) {
+                        if ((tokens[i].equals("entre") || tokens[i].equals("de")) && i < tokens.length - 1 && tags[i + 1].equals("NUM")) {
+                            String startYear = null, endYear = null;
+                            for (; i < tokens.length; i++) {
+                                if (tags[i].equals("NUM")) {
+                                    if (startYear == null) {
+                                        startYear = tokens[i];
+                                    } else if (startYear == null) {
+                                        endYear = tokens[i];
+                                        break;
+                                    }
+                                }
+                            }
+                            str.append("date:[" + startYear + " TO " + endYear + "]");
+                        }
+                    } else if ( stem.equals("trabaj")) {
+                        if ( i < tokens.length - 3 && tokens[i + 3].equals("grado") ) {
+                            str.append("type:TAZ-TFG ");
+                            i += 3;
+                        } else if ( i < tokens.length - 3 && tokens[i + 3].equals("máster") ) {
+                            str.append("type:TAZ-TFM ");
+                            i += 3;
+                        } else {
+                            str.append("type:TAZ-TFG ");
+                            str.append("type:TAZ-TFM ");
+                        }
+                    } else if ( tags[i].equals("NOUN") ) {
+                        str.append(tokens[i] + " ");
+                    } else if(tokens[i].equals("últimos")){
+                        if(tags[i + 1].equals("NUM") && tokens[i + 2].equals("años")){
+                            int year = Integer.parseInt(tokens[i+1]);
+                            year = 2022 - year;
+                            str.append("date:["+ Integer.toString(year) + " TO 2022] " );
+                            i +=2;
+                        }
+                    }
+                }
+            }
+
+            return str.toString();
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
     public static LinkedHashMap<String,String> searchInfoNeeds(String infoNeedsFile) {
 
         LinkedHashMap<String,String> results = new LinkedHashMap<String,String>();
@@ -209,8 +321,11 @@ public class SearchFiles {
                 String id = elem.getElementsByTagName("identifier").item(0).getTextContent();
                 String text = elem.getElementsByTagName("text").item(0).getTextContent();
 
+                String query = generateQueryFromInfoNeed(text);
+                System.out.println("QUERY:" + query);
+                
                 // transform the raw info need into a text query which can be parsed by the main program
-                results.put(id, text);
+                results.put(id, query);
             }
         } catch (ParserConfigurationException e) {
             throw new RuntimeException(e);
