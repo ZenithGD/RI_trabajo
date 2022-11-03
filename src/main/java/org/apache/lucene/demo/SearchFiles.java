@@ -20,8 +20,10 @@ package org.apache.lucene.demo;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.text.ParseException;
 import java.util.*;
 
+import org.apache.lucene.index.Term ;
 import opennlp.tools.stemmer.PorterStemmer;
 import opennlp.tools.stemmer.snowball.SnowballStemmer;
 import org.apache.lucene.analysis.es.SpanishLightStemFilter;
@@ -39,6 +41,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
+import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.store.FSDirectory;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -56,6 +59,8 @@ import javax.xml.xpath.XPathNodes;
 /** Simple command-line based search demo. */
 public class SearchFiles {
 
+    static String[] fields = { "title", "subject", "description", "creator", "contributor", "publisher", "date", "type" };
+
     private SearchFiles() {
     }
 
@@ -68,7 +73,6 @@ public class SearchFiles {
         }
 
         String index = "index";
-        String[] fields = { "title", "subject", "description", "creator", "contributor", "publisher", "date", "type" };
         BooleanClause.Occur[] flags = {
             BooleanClause.Occur.SHOULD,
             BooleanClause.Occur.SHOULD,
@@ -84,9 +88,14 @@ public class SearchFiles {
         String queryFile = null;
         String infoNeedsFile = null;
         String[] identifiers = null;
-        String[] strings = null;
         int hitsPerPage = 10;
         OutputStreamWriter out = null;
+        LinkedHashMap<String,Query> infoNeeds = null;
+
+        
+        Analyzer analyzer = new SpanishAnalyzer2();
+        
+        QueryParser parser = new MultiFieldQueryParser(fields, analyzer);
 
         for (int i = 0; i < args.length; i++) {
             if ("-index".equals(args[i])) {
@@ -96,7 +105,7 @@ public class SearchFiles {
             /*
              * else if ("-field".equals(args[i])) {
              * fields = args[i+1];
-             * i++;
+             * i++;i
              * }
              */ else if ("-queries".equals(args[i])) {
                 queries = args[i + 1];
@@ -122,17 +131,15 @@ public class SearchFiles {
             } else if ("-infoNeeds".equals(args[i])) {
                 infoNeedsFile = args[++i];
                 
-                LinkedHashMap<String,String> infoNeeds = searchInfoNeeds(infoNeedsFile);
+                infoNeeds = searchInfoNeeds(infoNeedsFile);
 
                 identifiers = infoNeeds.keySet().toArray(new String[0]);
-                strings = infoNeeds.values().toArray(new String[0]);
             }
 
         }
 
         IndexReader reader = DirectoryReader.open(FSDirectory.open(Paths.get(index)));
         IndexSearcher searcher = new IndexSearcher(reader);
-        Analyzer analyzer = new SpanishAnalyzer2();
 
         BufferedReader in = null;
         if (queryFile != null) {
@@ -140,7 +147,7 @@ public class SearchFiles {
         } else {
             in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         }
-        QueryParser parser = new MultiFieldQueryParser(fields, analyzer);
+        
         int queryIndex = 0;
 
         while (true) {
@@ -153,7 +160,7 @@ public class SearchFiles {
                 break;
             }
 
-            String line = infoNeedsFile != null ? strings[queryIndex] : in.readLine();
+            String line = infoNeedsFile != null ? identifiers[queryIndex] : in.readLine();
 
             if (line == null || line.length() == -1) {
                 break;
@@ -164,7 +171,7 @@ public class SearchFiles {
                 break;
             }
 
-            Query query = parser.parse(line);
+            Query query = infoNeeds != null ? infoNeeds.get(identifiers[queryIndex]) : parser.parse(line);
             // System.out.println("Searching for: " + query.toString(fields));
 
             if (repeat > 0) { // repeat & time as benchmark
@@ -196,7 +203,7 @@ public class SearchFiles {
         reader.close();
     }
 
-    public static String generateQueryFromInfoNeed(String text) throws IOException {
+    public static Query generateQueryFromInfoNeed(String text) throws IOException, org.apache.lucene.queryparser.classic.ParseException {
 
         NameFinderME nameFinder = null;
         try (InputStream modelIn = new FileInputStream("models/es-ner-location.bin")) {
@@ -205,102 +212,176 @@ public class SearchFiles {
         }
 
         try (InputStream modelIn = new FileInputStream("models/opennlp-es-pos-perceptron-pos-universal.model")) {
+
+            Analyzer analyzer = new SpanishAnalyzer2();
+            QueryParser parser = new MultiFieldQueryParser(fields, analyzer);
+
             //TokenizerModel modelT = new TokenizerModel(modelIn);
             POSModel model = new POSModel(modelIn);
 
             POSTaggerME tagger = new POSTaggerME(model);
             SimpleTokenizer tokenizer = SimpleTokenizer.INSTANCE;
 
+            BooleanQuery.Builder bldr = new BooleanQuery.Builder();
             String[] tokens = tokenizer.tokenize(text);
             String[] tags = tagger.tag(tokens);
             Span[] nameSpans = nameFinder.find(tokens);
 
-            StringBuilder str = new StringBuilder();
-
-            for ( Span name : nameSpans ) {
-                for ( int i = name.getStart(); i < name.getEnd(); i++ ) {
-                    System.out.println("name : " + tokens[i]);
-                }
+            for ( int i = 0; i < tags.length; i++ ) {
+                tokens[i] = tokens[i].toLowerCase();
             }
 
             for ( int i = 0; i < tags.length; i++ ) {
                 SnowballStemmer stemmer = new SnowballStemmer(SnowballStemmer.ALGORITHM.SPANISH);
-                String stem = stemmer.stem(tokens[i]).toString();
-                System.out.println(stem + "->" + tags[i]);
-                //System.out.println(tokens[i] + " - > " + tags[i]);
-
+                String stem = stemmer.stem(tokens[i]).toString().toLowerCase();
                 if (stem.equals("realiz")) {
                     for (Span name : nameSpans) {
-
                         for (int j = name.getStart(); j < name.getEnd(); j++) {
                             if (j > i) {
-                                System.out.println("add name creator");
-                                str.append("creator:" + tokens[j] + " ");
+                                Query cQuery = parser.parse("creator:" + tokens[j]);
+                                BoostQuery boost = new BoostQuery(cQuery, 15f);
+                                bldr.add(boost, BooleanClause.Occur.SHOULD);
                             }
                         }
                     }
                 }
                 else if ( stem.equals("dirig") ) {
                     for ( Span name : nameSpans ) {
-
                         for ( int j = name.getStart(); j < name.getEnd(); j++ ) {
                             if ( j > i ) {
-                                System.out.println("add name creator");
-                                str.append("publisher:" + tokens[j] + " ");
+                                Query cQuery = parser.parse("contributor:" + tokens[j]);
+                                BoostQuery boost = new BoostQuery(cQuery, 15f);
+                                bldr.add(boost, BooleanClause.Occur.SHOULD);
                             }
                         }
                     }
-                } else {
-                    if ( tags[i].equals("ADP") ) {
-                        if ((tokens[i].equals("entre") || tokens[i].equals("de")) && i < tokens.length - 1 && tags[i + 1].equals("NUM")) {
-                            String startYear = null, endYear = null;
-                            for (; i < tokens.length; i++) {
-                                if (tags[i].equals("NUM")) {
-                                    if (startYear == null) {
-                                        startYear = tokens[i];
-                                    } else if (startYear == null) {
-                                        endYear = tokens[i];
-                                        break;
-                                    }
+                } else if ( tags[i].equals("ADP") ) {
+                    if ((tokens[i].equals("entre") || tokens[i].equals("de")) && i < tokens.length - 1 && tags[i + 1].equals("NUM")) {
+                        String startYear = null, endYear = null;
+                        for (; i < tokens.length; i++) {
+                            if (tags[i].equals("NUM")) {
+                                if (startYear == null) {
+                                    startYear = tokens[i];
+                                } else if ( endYear == null) {
+                                    endYear = tokens[i];
+                                    break;
                                 }
                             }
-                            str.append("date:[" + startYear + " TO " + endYear + "]");
                         }
-                    } else if ( stem.equals("trabaj")) {
-                        if ( i < tokens.length - 3 && tokens[i + 3].equals("grado") ) {
-                            str.append("type:TAZ-TFG ");
-                            i += 3;
-                        } else if ( i < tokens.length - 3 && tokens[i + 3].equals("máster") ) {
-                            str.append("type:TAZ-TFM ");
-                            i += 3;
-                        } else {
-                            str.append("type:TAZ-TFG ");
-                            str.append("type:TAZ-TFM ");
+
+                        TermRangeQuery dQuery = TermRangeQuery.newStringRange("date", startYear, endYear, true, true);
+                        bldr.add(dQuery, BooleanClause.Occur.SHOULD);
+                    }
+                    else if ( tokens[i].equals("en") ) {
+                        if ( i < tokens.length - 1 ) {
+                            Query cQuery = parser.parse("language:" + tokens[i + 1].substring(0, 2));
+                            bldr.add(cQuery, BooleanClause.Occur.SHOULD);
                         }
-                    } else if ( tags[i].equals("NOUN") ) {
-                        str.append(tokens[i] + " ");
-                    } else if(tokens[i].equals("últimos")){
-                        if(tags[i + 1].equals("NUM") && tokens[i + 2].equals("años")){
-                            int year = Integer.parseInt(tokens[i+1]);
-                            year = 2022 - year;
-                            str.append("date:["+ Integer.toString(year) + " TO 2022] " );
-                            i +=2;
+                        i++;
+                    }
+                } else if ( stem.equals("tesis") ) {
+                    TermQuery tesisQuery = new TermQuery(new Term("type", "TESIS")); 
+                    bldr.add(tesisQuery, BooleanClause.Occur.SHOULD);
+                } else if ( stem.equals("trabaj") ) {
+
+                    TermQuery tfgQuery = new TermQuery(new Term("type", "TAZ-TFG"));
+                    TermQuery tfmQuery = new TermQuery(new Term("type", "TAZ-TFM"));
+                    boolean foundKeyword = false;
+                    for ( int j = i + 1; j <= i + 4 && j < tokens.length; j++ ) {
+                        if (tokens[j].equals("grado")) {
+                            bldr.add(tfgQuery, BooleanClause.Occur.SHOULD);
+                            i = j;
+                            foundKeyword = true;
+                            break;
+                        } else if (tokens[j].equals("máster")) {
+                            bldr.add(tfmQuery, BooleanClause.Occur.SHOULD);
+                            i = j;
+                            foundKeyword = true;
+                            break;
                         }
+                    }
+
+                    if ( !foundKeyword ) {
+                        bldr.add(tfgQuery, BooleanClause.Occur.SHOULD);
+                        bldr.add(tfmQuery, BooleanClause.Occur.SHOULD);
+                    }
+                } else if (tokens[i].equals("últimos")) {
+                    if(tags[i + 1].equals("NUM") && tokens[i + 2].equals("años")){
+                        int years = Integer.parseInt(tokens[i+1]);
+                        int year = 2022 - years;
+
+                        TermRangeQuery dQuery = TermRangeQuery.newStringRange("date", Integer.toString(year), "2022", true, true);
+                        
+                        bldr.add(dQuery, BooleanClause.Occur.SHOULD);
+                        i +=2;
+                    }
+                } else if(tokens[i].equals("departamento")){
+                    if(tokens[i + 1].equals("de")){
+                        String phrase = "";
+                        for(int j = i + 2; j < i + 5; j++){
+                            if(tags[j].equals("NOUN")){
+                                phrase += tokens[j] + " ";
+                                i = j;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if(!phrase.isEmpty()){
+
+                            Query pubQuery = parser.parse("publisher:" + phrase );
+                            BoostQuery boost = new BoostQuery(pubQuery, 15.0f);
+                            bldr.add(boost, BooleanClause.Occur.SHOULD);
+                        }
+                    }
+                } else if (tokens[i].equals("campo") ){
+
+                    for (int j = i + 1; j < tokens.length ; j++){
+                        if(tags[j].equals("NOUN")) {
+                            Query sQuery = parser.parse("subject:" + tokens[j]);
+                            BoostQuery bs = new BoostQuery(sQuery, 15.0f);
+                            bldr.add(bs, BooleanClause.Occur.SHOULD);
+
+                            Query tQuery = parser.parse("title:" + tokens[j]);
+                            BoostQuery bt = new BoostQuery(tQuery, 10.0f);
+                            bldr.add(bt, BooleanClause.Occur.SHOULD);
+
+                            Query dQuery = parser.parse("description:" + tokens[j]);
+                            BoostQuery bd = new BoostQuery(dQuery, 10.0f);
+                            bldr.add(bd, BooleanClause.Occur.SHOULD);
+                            i = j;
+                            break;
+                        }
+                    }
+                
+                } else if ( tags[i].equals("NOUN") ) {
+
+                    if ( stem.equals("sigl") && i < tokens.length - 1 ) {
+                        Query sigQuery = parser.parse("description:" + tokens[++i]);
+                        bldr.add(sigQuery, BooleanClause.Occur.SHOULD);
+                    } else {
+                        Query dQuery = parser.parse("description:" + tokens[i]);
+                        bldr.add(dQuery, BooleanClause.Occur.SHOULD);
+
+                        Query sQuery = parser.parse("subject:" + tokens[i]);
+                        bldr.add(sQuery, BooleanClause.Occur.SHOULD);
+
+                        Query tQuery = parser.parse("title:" + tokens[i]);
+                        bldr.add(tQuery, BooleanClause.Occur.SHOULD);
                     }
                 }
             }
 
-            return str.toString();
+            return bldr.build();
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
-    public static LinkedHashMap<String,String> searchInfoNeeds(String infoNeedsFile) {
+    public static LinkedHashMap<String,Query> searchInfoNeeds(String infoNeedsFile) {
 
-        LinkedHashMap<String,String> results = new LinkedHashMap<String,String>();
-        NodeList nodes = null;
+        LinkedHashMap<String,Query> results = new LinkedHashMap<String,Query>();
 
         try {
             File xmlFile = new File(infoNeedsFile);
@@ -321,8 +402,7 @@ public class SearchFiles {
                 String id = elem.getElementsByTagName("identifier").item(0).getTextContent();
                 String text = elem.getElementsByTagName("text").item(0).getTextContent();
 
-                String query = generateQueryFromInfoNeed(text);
-                System.out.println("QUERY:" + query);
+                Query query = generateQueryFromInfoNeed(text);
                 
                 // transform the raw info need into a text query which can be parsed by the main program
                 results.put(id, query);
@@ -335,6 +415,9 @@ public class SearchFiles {
             throw new RuntimeException(e);
         } catch (XPathExpressionException e) {
             throw new RuntimeException(e);
+        } catch (org.apache.lucene.queryparser.classic.ParseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
         }
 
         return results;
@@ -370,6 +453,7 @@ public class SearchFiles {
             } else {
                 out.write(queryIdentifier + "\tNo path for this document\n");
             }
+            //System.out.println(searcher.explain(query, hits[i].doc));
         }
     }
 
@@ -434,7 +518,7 @@ public class SearchFiles {
                 }
 
                 // Explain the scoring function
-                // System.out.println(searcher.explain(query, hits[i].doc));
+                //System.out.println(searcher.explain(query, hits[i].doc));
 
             }
 

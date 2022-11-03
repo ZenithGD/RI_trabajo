@@ -154,7 +154,7 @@ public class IndexFiles {
         parseXMLTagText(doc, xmlElement, "dc:contributor", "contributor", Field.Store.YES);
         parseXMLTagText(doc, xmlElement, "dc:publisher", "publisher", Field.Store.YES);
         parseXMLTagString(doc, xmlElement, "dc:date", "date", Field.Store.YES);
-        parseXMLTagText(doc, xmlElement, "dc:type", "type", Field.Store.YES);
+        parseXMLTagString(doc, xmlElement, "dc:type", "type", Field.Store.YES);
     }
 
     /**
